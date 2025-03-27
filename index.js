@@ -20,18 +20,13 @@ module.exports = function (app) {
     'Plugin that sets the system date & time from navigation.datetime delta messages'
 
   plugin.schema = () => ({
-    title: 'Set System Time with sudo',
+    title: 'Set System Time',
     type: 'object',
     properties: {
       interval: {
         type: 'number',
         title: 'Interval between updates in seconds (0 is once upon plugin start when datetime received)',
         default: 0
-      },
-      sudo: {
-        type: 'boolean',
-        title: 'Use sudo when setting the time',
-        default: true
       },
       preferNetworkTime: {
         type: 'boolean',
@@ -62,12 +57,17 @@ module.exports = function (app) {
         if (process.platform == 'win32') {
           console.error("Set-system-time supports only linux-like os's")
         } else {
-          if( ! plugin.useNetworkTime(options) ){
-            const useSudo = typeof options.sudo === 'undefined' || options.sudo
-            const setDate = `date --iso-8601 -u -s "${datetime}"`
-            const command = useSudo
-              ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
-              : setDate
+          if (!plugin.useNetworkTime(options)) {
+            const command = `
+            if ! date --iso-8601 -u -s "${datetime}"; then
+              if sudo -n date &> /dev/null; then
+                sudo date --iso-8601 -u -s "${datetime}"
+              else
+                exit 3
+              fi
+            fi
+            `.trim();
+            
             child = require('child_process').spawn('sh', ['-c', command])
             child.on('exit', value => {
               if (value === 0) {
@@ -91,14 +91,14 @@ module.exports = function (app) {
   }
 
   plugin.useNetworkTime = (options) => {
-    if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
+    if (typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true) {
       const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
       try {
-        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+        validSources = require('child_process').execSync(chronyCmd, { timeout: 500 });
       } catch (e) {
         return false
       }
-      if(validSources > 0 ){
+      if (validSources > 0) {
         return true
       }
     }
