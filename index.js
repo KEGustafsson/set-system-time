@@ -2,7 +2,13 @@ module.exports = function (app) {
   const logError =
     app.error ||
     (err => {
-      console.error(err)
+      if (err instanceof Error) {
+        console.error(err.stack)
+      } else if (typeof err === 'object') {
+        console.error(JSON.stringify(err, null, 2))
+      } else {
+        console.error(err)
+      }
     })
   const debug =
     app.debug ||
