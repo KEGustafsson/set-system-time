@@ -2,9 +2,8 @@ module.exports = function (app) {
   const logError =
     app.error ||
     (err => {
-      if (err instanceof Error) {
-        console.error(err.stack)
-      } else if (typeof err === 'object') {
+      // Fix 1: Properly handle object logging
+      if (typeof err === 'object') {
         console.error(JSON.stringify(err, null, 2))
       } else {
         console.error(err)
@@ -13,18 +12,20 @@ module.exports = function (app) {
   const debug =
     app.debug ||
     (msg => {
-      console.log(msg)
+      // Fix 2: Also fix debug logging
+      if (typeof msg === 'object') {
+        console.log(JSON.stringify(msg, null, 2))
+      } else {
+        console.log(msg)
+      }
     })
-
   var plugin = {
     unsubscribes: []
   }
-
   plugin.id = 'set-system-time'
   plugin.name = 'Set System Time'
   plugin.description =
     'Plugin that sets the system date & time from navigation.datetime delta messages'
-
   plugin.schema = () => ({
     title: 'Set System Time with sudo',
     type: 'object',
@@ -46,15 +47,12 @@ module.exports = function (app) {
       }
     }
   })
-
   const SUDO_NOT_AVAILABLE = 'SUDO_NOT_AVAILABLE'
-
   let count = 0
   let lastMessage = ''
   plugin.statusMessage = function () {
     return `${lastMessage} ${count > 0 ? '- system time set ' + count + ' times' : ''}`
   }
-
   plugin.start = function (options) {
     let stream = app.streambundle.getSelfStream('navigation.datetime')
     if (options && options.interval > 0) {
@@ -84,10 +82,22 @@ module.exports = function (app) {
                 lastMessage =
                   'Passwordless sudo not available, can not set system time'
                 logError(lastMessage)
+              } else {
+                // Fix 3: Handle other exit codes
+                lastMessage = `Command failed with exit code: ${value}`
+                logError(lastMessage)
               }
             })
+            
+            // Fix 4: Better error handling for stderr
             child.stderr.on('data', function (data) {
-              lastMessage = data.toString()
+              lastMessage = data.toString().trim() // Ensure it's a string and trim whitespace
+              logError(`stderr: ${lastMessage}`)
+            })
+            
+            // Fix 5: Handle spawn errors
+            child.on('error', function (error) {
+              lastMessage = `Failed to spawn process: ${error.message}`
               logError(lastMessage)
             })
           }
@@ -95,25 +105,23 @@ module.exports = function (app) {
       })
     )
   }
-
   plugin.useNetworkTime = (options) => {
     if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
       const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
       try {
-        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+        // Fix 6: Properly handle execSync return value
+        const validSources = require('child_process').execSync(chronyCmd, {timeout: 500});
+        const count = parseInt(validSources.toString().trim());
+        return count > 0;
       } catch (e) {
+        debug(`chrony check failed: ${e.message}`)
         return false
-      }
-      if(validSources > 0 ){
-        return true
       }
     }
     return false
   }
-
   plugin.stop = function () {
     plugin.unsubscribes.forEach(f => f())
   }
-
   return plugin
 }
