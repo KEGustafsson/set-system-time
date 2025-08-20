@@ -2,23 +2,23 @@ module.exports = function (app) {
   const logError =
     app.error ||
     (err => {
-      console.error(JSON.stringify(err, null, 2))
+      // Ensure we're always working with a string
+      const errorMsg = typeof err === 'string' ? err : JSON.stringify(err, null, 2)
+      console.error(errorMsg)
     })
   const debug =
     app.debug ||
     (msg => {
-      console.log(JSON.stringify(msg, null, 2))
+      const debugMsg = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2)
+      console.log(debugMsg)
     })
-
   var plugin = {
     unsubscribes: []
   }
-
   plugin.id = 'set-system-time'
   plugin.name = 'Set System Time'
   plugin.description =
     'Plugin that sets the system date & time from navigation.datetime delta messages'
-
   plugin.schema = () => ({
     title: 'Set System Time with sudo',
     type: 'object',
@@ -40,15 +40,12 @@ module.exports = function (app) {
       }
     }
   })
-
   const SUDO_NOT_AVAILABLE = 'SUDO_NOT_AVAILABLE'
-
   let count = 0
   let lastMessage = ''
   plugin.statusMessage = function () {
     return `${lastMessage} ${count > 0 ? '- system time set ' + count + ' times' : ''}`
   }
-
   plugin.start = function (options) {
     let stream = app.streambundle.getSelfStream('navigation.datetime')
     if (options && options.interval > 0) {
@@ -78,10 +75,25 @@ module.exports = function (app) {
                 lastMessage =
                   'Passwordless sudo not available, can not set system time'
                 logError(lastMessage)
+              } else {
+                // Handle other exit codes
+                lastMessage = `Command failed with exit code: ${value}`
+                logError(lastMessage)
               }
             })
             child.stderr.on('data', function (data) {
-              lastMessage = data.toString()
+              // Ensure proper string conversion and error handling
+              try {
+                lastMessage = data.toString('utf8').trim()
+                if (lastMessage) {
+                  logError(lastMessage)
+                }
+              } catch (err) {
+                logError('Error processing stderr data: ' + err.message)
+              }
+            })
+            child.on('error', function(err) {
+              lastMessage = 'Process error: ' + err.message
               logError(lastMessage)
             })
           }
@@ -89,25 +101,23 @@ module.exports = function (app) {
       })
     )
   }
-
   plugin.useNetworkTime = (options) => {
     if ( typeof options.preferNetworkTime !== 'undefined' && options.preferNetworkTime == true ){
       const chronyCmd = "chronyc sources 2> /dev/null | cut -c2 | grep -ce '-\|*'";
       try {
-        validSources = require('child_process').execSync(chronyCmd,{timeout:500});
+        const result = require('child_process').execSync(chronyCmd, {timeout: 500, encoding: 'utf8'});
+        const validSources = parseInt(result.trim(), 10);
+        return validSources > 0;
       } catch (e) {
-        return false
-      }
-      if(validSources > 0 ){
-        return true
+        // Log the actual error for debugging
+        debug('chrony check failed: ' + e.message);
+        return false;
       }
     }
     return false
   }
-
   plugin.stop = function () {
     plugin.unsubscribes.forEach(f => f())
   }
-
   return plugin
 }
