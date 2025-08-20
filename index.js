@@ -54,9 +54,49 @@ module.exports = function (app) {
     console.log('Using fallback logError function')
   }
   
-  // Use app.error if available, otherwise use our enhanced logError
-  const finalLogError = app.error || logError
-  const finalDebug = app.debug || debug
+  // Create wrapper functions that ensure proper string conversion for app.error/app.debug
+  const finalLogError = (err) => {
+    let message
+    if (err instanceof Error) {
+      message = `${err.name}: ${err.message}`
+      if (err.stack) message += `\nStack: ${err.stack}`
+    } else if (err && typeof err === 'object') {
+      try {
+        message = JSON.stringify(err, null, 2)
+      } catch (e) {
+        message = util.inspect(err, { depth: null, colors: false })
+      }
+    } else {
+      message = String(err)
+    }
+    
+    if (app.error) {
+      app.error(message)  // Always pass a string to app.error
+    } else {
+      logError(err)  // Use our enhanced version
+    }
+  }
+  
+  const finalDebug = (msg) => {
+    let message
+    if (msg instanceof Error) {
+      message = `${msg.name}: ${msg.message}`
+    } else if (msg && typeof msg === 'object') {
+      try {
+        message = JSON.stringify(msg, null, 2)
+      } catch (e) {
+        message = util.inspect(msg, { depth: null, colors: false })
+      }
+    } else {
+      message = String(msg)
+    }
+    
+    if (app.debug) {
+      app.debug(message)  // Always pass a string to app.debug
+    } else {
+      debug(msg)  // Use our enhanced version
+    }
+  }
   
   var plugin = {
     unsubscribes: []
