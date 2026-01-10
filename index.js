@@ -64,7 +64,10 @@ module.exports = function (app) {
         } else {
           if( ! plugin.useNetworkTime(options) ){
             const useSudo = typeof options.sudo === 'undefined' || options.sudo
-            const setDate = `date --iso-8601 -u -s "${datetime}"`
+            // Convert ISO 8601 datetime to format compatible with both GNU date and BusyBox date
+            // e.g., "2024-01-10T17:55:03.000Z" → "2024-01-10 17:55:03"
+            const dateStr = datetime.replace('T', ' ').replace(/\.\d+Z?$|Z$/, '')
+            const setDate = `date -u -s "${dateStr}"`
             const command = useSudo
               ? `if sudo -n date &> /dev/null ; then sudo ${setDate} ; else exit 3 ; fi`
               : setDate
